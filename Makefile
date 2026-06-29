@@ -18,6 +18,16 @@ kernel.o: kernel.c
 	  -fno-builtin \
 	  -c kernel.c -o kernel.o
 
+debug: $(IMAGE)
+	qemu-system-i386 \
+		-accel tcg \
+		-drive file=$(IMAGE),format=raw \
+		-display gtk \
+		-serial stdio \
+		-s -S \
+		-no-reboot \
+		-no-shutdown
+
 stage2.elf: stage2_entry.o kernel.o linker.ld
 	ld -m elf_i386 -T linker.ld -nostdlib stage2_entry.o kernel.o -o stage2.elf
 
