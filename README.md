@@ -25,6 +25,13 @@ make run
 make run-headless (no gui)
 ```
 
+## 構造
+
+- boot.asm (1段目
+- stage2_entry.asm (2段目
+- kernel.c (2段目と同じ並びで動くCカーネル
+- memo/ (メモを書く
+
 ## 資料
 
 https://wiki.osdev.org/Bare_Bones
