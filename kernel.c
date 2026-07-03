@@ -185,7 +185,7 @@ static void show_memory_map_on_vga(const u32 *memmap, u32 entry_count) {
   vga_print_at("E820 entries:", 0x0F, 0, 2);
   vga_print_u32_at(entry_count, 0x0F, 14, 2);
 
-  u32 shown = entry_count < 4 ? entry_count : 4;
+  u32 shown = entry_count;
   for (u32 i = 0; i < shown; i++) {
     const u32 *entry = memmap + i * E820_WORDS_PER_ENTRY;
     u32 y = 4 + i;
