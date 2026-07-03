@@ -200,6 +200,61 @@ static void show_memory_map_on_vga(const u32 *memmap, u32 entry_count) {
   }
 }
 
+static void serial_print_hex8(u8 value) {
+  serial_putc(hex_digit(value >> 4));
+  serial_putc(hex_digit(value));
+}
+
+static void dump_memory_bytes(u32 start_address, u32 byte_count) {
+  const volatile u8 *p = (const volatile u8 *)start_address;
+
+  for (u32 offset = 0; offset < byte_count; offset += 16) {
+    serial_print_hex32(start_address + offset);
+    serial_print(": ");
+
+    for (u32 i = 0; i < 16; i++) {
+      if (offset + i < byte_count) {
+        serial_print_hex8(p[offset + i]);
+        serial_putc(' ');
+      } else {
+        serial_print("   ");
+      }
+    }
+
+    serial_print(" |");
+
+    for (u32 i = 0; i < 16 && offset + i < byte_count; i++) {
+      u8 c = p[offset + i];
+
+      if (c >= 0x20 && c <= 0x7E) {
+        serial_putc((char)c);
+      } else {
+        serial_putc('.');
+      }
+    }
+
+    serial_print("|\r\n");
+  }
+}
+
+static void memory_write_demo(void){
+  volatile u32 *addr = (volatile u32 *)0x70000;
+
+  serial_print("write_and_dump_demo\r\n");
+
+  serial_print("before dump:\r\n");
+  dump_memory_bytes(0x6FFF0, 0x40);
+
+  *addr = 0xCAFEBABE;
+
+  serial_print("after dump:\r\n");
+  dump_memory_bytes(0x6FFF0, 0x40);
+
+  serial_print("read as u32: ");
+  serial_print_hex32(*addr);
+  serial_print("\r\n");
+}
+
 void kernel_main(const u32 *memmap, u32 entry_count) {
   serial_init();
 
@@ -215,6 +270,11 @@ void kernel_main(const u32 *memmap, u32 entry_count) {
 
   dump_memory_map(memmap, entry_count);
   show_memory_map_on_vga(memmap, entry_count);
+
+  dump_memory_map(memmap, entry_count);
+  show_memory_map_on_vga(memmap, entry_count);
+
+  memory_write_demo();
 
   for (;;) {
     __asm__ volatile("hlt");
