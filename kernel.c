@@ -1,10 +1,7 @@
 // kernel.c
 
-typedef unsigned char u8;
-typedef unsigned short u16;
-typedef unsigned int u32;
+#include "lib.h"
 
-#define COM1 0x3F8
 #define E820_WORDS_PER_ENTRY 5
 #define E820_TYPE_USABLE 1
 
@@ -86,141 +83,19 @@ static void idt_init(void) {
   idt_load();
 }
 
-static void serial_init(void) {
-  outb(COM1 + 1, 0x00);
-  outb(COM1 + 3, 0x80);
-  outb(COM1 + 0, 0x03);
-  outb(COM1 + 1, 0x00);
-  outb(COM1 + 3, 0x03);
-  outb(COM1 + 2, 0xC7);
-  outb(COM1 + 4, 0x0B);
-}
-
-static int serial_ready(void) { return inb(COM1 + 5) & 0x20; }
-
-static void serial_putc(char c) {
-  while (!serial_ready()) {
-  }
-
-  outb(COM1, (u8)c);
-}
-
-static char hex_digit(u8 value) {
-  value &= 0x0F;
-  return value < 10 ? (char)('0' + value) : (char)('A' + value - 10);
-}
-
-static void serial_print_hex8(u8 value) {
-  serial_putc(hex_digit(value >> 4));
-  serial_putc(hex_digit(value));
-}
-
-static void serial_print(const char *s) {
-  while (*s) {
-    serial_putc(*s++);
-  }
-}
-
-static void serial_print_hex32_raw(u32 value) {
-  for (int shift = 28; shift >= 0; shift -= 4) {
-    serial_putc(hex_digit((u8)(value >> shift)));
-  }
-}
-
-static void serial_print_hex32(u32 value) {
-  serial_print("0x");
-  serial_print_hex32_raw(value);
-}
-
-static void serial_print_hex64(u32 high, u32 low) {
-  serial_print("0x");
-  serial_print_hex32_raw(high);
-  serial_putc('_');
-  serial_print_hex32_raw(low);
-}
-
-static void serial_print_u32(u32 value) {
-  char buf[10];
-  u32 len = 0;
-
-  if (value == 0) {
-    serial_putc('0');
-    return;
-  }
-
-  while (value != 0 && len < sizeof(buf)) {
-    buf[len++] = (char)('0' + (value % 10));
-    value /= 10;
-  }
-
-  while (len > 0) {
-    serial_putc(buf[--len]);
-  }
-}
-
-static void serial_print_e820_type(u32 type) {
+static void printk_e820_type(u32 type) {
   if (type == E820_TYPE_USABLE) {
-    serial_print("usable");
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "usable");
   } else if (type == 2) {
-    serial_print("reserved");
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "reserved");
   } else if (type == 3) {
-    serial_print("acpi");
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "acpi");
   } else if (type == 4) {
-    serial_print("nvs");
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "nvs");
   } else if (type == 5) {
-    serial_print("bad");
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "bad");
   } else {
-    serial_print("type ");
-    serial_print_u32(type);
-  }
-}
-
-static volatile u16 *const VGA = (volatile u16 *)0xB8000;
-
-static void vga_clear(void) {
-  for (u32 i = 0; i < 80 * 25; i++) {
-    VGA[i] = ((u16)0x0F << 8) | ' ';
-  }
-}
-
-static void vga_putc_at(char c, u8 color, u32 x, u32 y) {
-  if (x < 80 && y < 25) {
-    VGA[y * 80 + x] = ((u16)color << 8) | (u8)c;
-  }
-}
-
-static void vga_print_at(const char *s, u8 color, u32 x, u32 y) {
-  while (*s) {
-    vga_putc_at(*s, color, x, y);
-    x++;
-    s++;
-  }
-}
-
-static void vga_print_u32_at(u32 value, u8 color, u32 x, u32 y) {
-  char buf[10];
-  u32 len = 0;
-
-  if (value == 0) {
-    vga_putc_at('0', color, x, y);
-    return;
-  }
-
-  while (value != 0 && len < sizeof(buf)) {
-    buf[len++] = (char)('0' + (value % 10));
-    value /= 10;
-  }
-
-  while (len > 0) {
-    vga_putc_at(buf[--len], color, x++, y);
-  }
-}
-
-static void vga_print_hex32_at(u32 value, u8 color, u32 x, u32 y) {
-  vga_print_at("0x", color, x, y);
-  x += 2;
-  for (int shift = 28; shift >= 0; shift -= 4) {
-    vga_putc_at(hex_digit((u8)(value >> shift)), color, x++, y);
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "type %u", type);
   }
 }
 
@@ -325,18 +200,18 @@ static u32 keyboard_y = 23;
 void keyboard_irq_handler(void) {
   u8 scancode = inb(PS2_DATA);
 
-  serial_print("keyboard irq scancode=0x");
-  serial_print_hex8(scancode);
-  serial_print("\r\n");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "keyboard irq scancode=0x");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "%02X", scancode);
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "\r\n");
 
   // key release は無視
   if ((scancode & 0x80) == 0) {
     char c = scancode_to_ascii(scancode);
 
     if (c) {
-      serial_print("key char=");
-      serial_putc(c);
-      serial_print("\r\n");
+      printk(PRINTK_SERIAL, 0x00, 0, 0, "key char=");
+      printk(PRINTK_SERIAL, 0x00, 0, 0, "%c", c);
+      printk(PRINTK_SERIAL, 0x00, 0, 0, "\r\n");
 
       if (c == '\n') {
         keyboard_x = 0;
@@ -362,10 +237,10 @@ void keyboard_irq_handler(void) {
 }
 
 static void keyboard_interrupt_init(void) {
-  serial_print("Initializing IDT\r\n");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "Initializing IDT\r\n");
   idt_init();
 
-  serial_print("Remapping PIC\r\n");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "Remapping PIC\r\n");
   pic_remap();
 
   // いったん全部マスクしてから IRQ1 だけ有効化
@@ -374,19 +249,19 @@ static void keyboard_interrupt_init(void) {
 
   pic_clear_mask(IRQ_KEYBOARD);
 
-  serial_print("Enabling CPU interrupts\r\n");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "Enabling CPU interrupts\r\n");
   __asm__ volatile("sti");
 }
 
 static void dump_memory_map(const u32 *memmap, u32 entry_count) {
   if (entry_count > 64) {
-    serial_print("E820 entry count looks broken; clamp to 64\r\n");
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "E820 entry count looks broken; clamp to 64\r\n");
     entry_count = 64;
   }
 
-  serial_print("E820 memory map entries: ");
-  serial_print_u32(entry_count);
-  serial_print("\r\n");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "E820 memory map entries: ");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "%u", entry_count);
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "\r\n");
 
   for (u32 i = 0; i < entry_count; i++) {
     const u32 *entry = memmap + i * E820_WORDS_PER_ENTRY;
@@ -396,34 +271,34 @@ static void dump_memory_map(const u32 *memmap, u32 entry_count) {
     u32 length_high = entry[3];
     u32 type = entry[4];
 
-    serial_print("  [");
-    serial_print_u32(i);
-    serial_print("] base=");
-    serial_print_hex64(base_high, base_low);
-    serial_print(" length=");
-    serial_print_hex64(length_high, length_low);
-    serial_print(" type=");
-    serial_print_e820_type(type);
-    serial_print("\r\n");
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "  [");
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "%u", i);
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "] base=");
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "0x%08X_%08X", base_high, base_low);
+    printk(PRINTK_SERIAL, 0x00, 0, 0, " length=");
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "0x%08X_%08X", length_high, length_low);
+    printk(PRINTK_SERIAL, 0x00, 0, 0, " type=");
+    printk_e820_type(type);
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "\r\n");
   }
 }
 
 static void show_memory_map_on_vga(const u32 *memmap, u32 entry_count) {
-  vga_print_at("E820 entries:", 0x0F, 0, 2);
-  vga_print_u32_at(entry_count, 0x0F, 14, 2);
+  printk(PRINTK_VGA, 0x0F, 0, 2, "E820 entries:");
+  printk(PRINTK_VGA, 0x0F, 14, 2, "%u", entry_count);
 
   u32 shown = entry_count;
   for (u32 i = 0; i < shown; i++) {
     const u32 *entry = memmap + i * E820_WORDS_PER_ENTRY;
     u32 y = 4 + i;
 
-    vga_print_u32_at(i, 0x0A, 0, y);
-    vga_print_at(" base_lo=", 0x0F, 2, y);
-    vga_print_hex32_at(entry[0], 0x0F, 11, y);
-    vga_print_at(" len_lo=", 0x0F, 22, y);
-    vga_print_hex32_at(entry[2], 0x0F, 30, y);
-    vga_print_at(" type=", 0x0F, 41, y);
-    vga_print_u32_at(entry[4], 0x0F, 47, y);
+    printk(PRINTK_VGA, 0x0A, 0, y, "%u", i);
+    printk(PRINTK_VGA, 0x0F, 2, y, " base_lo=");
+    printk(PRINTK_VGA, 0x0F, 11, y, "0x%08X", entry[0]);
+    printk(PRINTK_VGA, 0x0F, 22, y, " len_lo=");
+    printk(PRINTK_VGA, 0x0F, 30, y, "0x%08X", entry[2]);
+    printk(PRINTK_VGA, 0x0F, 41, y, " type=");
+    printk(PRINTK_VGA, 0x0F, 47, y, "%u", entry[4]);
   }
 }
 
@@ -431,64 +306,64 @@ static void dump_memory_bytes(u32 start_address, u32 byte_count) {
   const volatile u8 *p = (const volatile u8 *)start_address;
 
   for (u32 offset = 0; offset < byte_count; offset += 16) {
-    serial_print_hex32(start_address + offset);
-    serial_print(": ");
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "0x%08X", start_address + offset);
+    printk(PRINTK_SERIAL, 0x00, 0, 0, ": ");
 
     for (u32 i = 0; i < 16; i++) {
       if (offset + i < byte_count) {
-        serial_print_hex8(p[offset + i]);
-        serial_putc(' ');
+        printk(PRINTK_SERIAL, 0x00, 0, 0, "%02X", p[offset + i]);
+        printk(PRINTK_SERIAL, 0x00, 0, 0, "%c", ' ');
       } else {
-        serial_print("   ");
+        printk(PRINTK_SERIAL, 0x00, 0, 0, "   ");
       }
     }
 
-    serial_print(" |");
+    printk(PRINTK_SERIAL, 0x00, 0, 0, " |");
 
     for (u32 i = 0; i < 16 && offset + i < byte_count; i++) {
       u8 c = p[offset + i];
 
       if (c >= 0x20 && c <= 0x7E) {
-        serial_putc((char)c);
+        printk(PRINTK_SERIAL, 0x00, 0, 0, "%c", (char)c);
       } else {
-        serial_putc('.');
+        printk(PRINTK_SERIAL, 0x00, 0, 0, "%c", '.');
       }
     }
 
-    serial_print("|\r\n");
+    printk(PRINTK_SERIAL, 0x00, 0, 0, "|\r\n");
   }
 }
 
 static void memory_write_demo(void) {
   volatile u32 *addr = (volatile u32 *)0x70000;
 
-  serial_print("write_and_dump_demo\r\n");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "write_and_dump_demo\r\n");
 
-  serial_print("before dump:\r\n");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "before dump:\r\n");
   dump_memory_bytes(0x6FFF0, 0x40);
 
   *addr = 0xCAFEBABE;
 
-  serial_print("after dump:\r\n");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "after dump:\r\n");
   dump_memory_bytes(0x6FFF0, 0x40);
 
-  serial_print("read as u32: ");
-  serial_print_hex32(*addr);
-  serial_print("\r\n");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "read as u32: ");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "0x%08X", *addr);
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "\r\n");
 }
 
 void kernel_main(const u32 *memmap, u32 entry_count) {
   serial_init();
 
-  serial_print("Entered C kernel_main()\r\n");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "Entered C kernel_main()\r\n");
 
   vga_clear();
-  vga_print_at("Stage1 -> Stage2 -> Protected Mode -> C", 0x0A, 0, 0);
-  vga_print_at("Memory map passed to kernel_main()", 0x0F, 0, 1);
+  printk(PRINTK_VGA, 0x0A, 0, 0, "Stage1 -> Stage2 -> Protected Mode -> C");
+  printk(PRINTK_VGA, 0x0F, 0, 1, "Memory map passed to kernel_main()");
 
-  serial_print("Memory map pointer: ");
-  serial_print_hex32((u32)memmap);
-  serial_print("\r\n");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "Memory map pointer: ");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "0x%08X", (u32)memmap);
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "\r\n");
 
   dump_memory_map(memmap, entry_count);
   show_memory_map_on_vga(memmap, entry_count);
@@ -498,7 +373,7 @@ void kernel_main(const u32 *memmap, u32 entry_count) {
 
   memory_write_demo();
 
-  vga_print_at("Keyboard IRQ enabled. Type keys.", 0x0F, 0, 22);
+  printk(PRINTK_VGA, 0x0F, 0, 22, "Keyboard IRQ enabled. Type keys.");
   keyboard_interrupt_init();
 
   for (;;) {

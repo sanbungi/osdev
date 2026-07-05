@@ -11,7 +11,7 @@ stage2_entry.o: stage2_entry.asm
 keyboard_irq.o: keyboard_irq.asm
 	nasm -f elf32 keyboard_irq.asm -o keyboard_irq.o
 
-kernel.o: kernel.c
+kernel.o: kernel.c lib.h
 	gcc -m32 \
 	  -ffreestanding \
 	  -fno-pic \
@@ -20,6 +20,16 @@ kernel.o: kernel.c
 	  -nostdinc \
 	  -fno-builtin \
 	  -c kernel.c -o kernel.o
+
+lib.o: lib.c lib.h
+	gcc -m32 \
+	  -ffreestanding \
+	  -fno-pic \
+	  -fno-stack-protector \
+	  -nostdlib \
+	  -nostdinc \
+	  -fno-builtin \
+	  -c lib.c -o lib.o
 
 debug: $(IMAGE)
 	qemu-system-i386 \
@@ -31,8 +41,8 @@ debug: $(IMAGE)
 		-no-reboot \
 		-no-shutdown
 
-stage2.elf: stage2_entry.o kernel.o keyboard_irq.o linker.ld
-	ld -m elf_i386 -T linker.ld -nostdlib -o stage2.elf stage2_entry.o kernel.o keyboard_irq.o
+stage2.elf: stage2_entry.o kernel.o lib.o keyboard_irq.o linker.ld
+	ld -m elf_i386 -T linker.ld -nostdlib -o stage2.elf stage2_entry.o kernel.o lib.o keyboard_irq.o
 
 $(STAGE2): stage2.elf
 	objcopy -O binary stage2.elf $(STAGE2)
