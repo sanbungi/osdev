@@ -17,40 +17,73 @@ static inline u8 inb(u16 port) {
   __asm__ volatile("inb %1, %0" : "=a"(value) : "Nd"(port));
   return value;
 }
+#define IDT_SIZE 256
 
-#define PS2_STATUS 0x64
+#define KERNEL_CODE_SELECTOR 0x08
+
+#define PIC1_COMMAND 0x20
+#define PIC1_DATA 0x21
+#define PIC2_COMMAND 0xA0
+#define PIC2_DATA 0xA1
+
+#define PIC_EOI 0x20
+
+#define ICW1_INIT 0x10
+#define ICW1_ICW4 0x01
+#define ICW4_8086 0x01
+
+#define IRQ_KEYBOARD 1
+#define INT_KEYBOARD 0x21
+
 #define PS2_DATA 0x60
+#define PS2_STATUS 0x64
 
-static int keyboard_has_data(void) { return inb(PS2_STATUS) & 0x01; }
-static u8 keyboard_read_scancode(void) {
-  while (!keyboard_has_data()) {
-  }
+struct idt_entry {
+  u16 offset_low;
+  u16 selector;
+  u8 zero;
+  u8 type_attr;
+  u16 offset_high;
+} __attribute__((packed));
 
-  return inb(PS2_DATA);
+struct idt_ptr {
+  u16 limit;
+  u32 base;
+} __attribute__((packed));
+
+static struct idt_entry idt[IDT_SIZE];
+
+extern void keyboard_irq_stub(void);
+
+static void io_wait(void) { outb(0x80, 0); }
+
+static void idt_set_gate(u8 index, u32 handler, u16 selector, u8 type_attr) {
+  idt[index].offset_low = handler & 0xFFFF;
+  idt[index].selector = selector;
+  idt[index].zero = 0;
+  idt[index].type_attr = type_attr;
+  idt[index].offset_high = (handler >> 16) & 0xFFFF;
 }
 
-static char scancode_to_ascii(u8 scancode) {
-  static const char table[128] = {
-      [0x02] = '1', [0x03] = '2',  [0x04] = '3', [0x05] = '4', [0x06] = '5',
-      [0x07] = '6', [0x08] = '7',  [0x09] = '8', [0x0A] = '9', [0x0B] = '0',
+static void idt_load(void) {
+  struct idt_ptr ptr;
 
-      [0x10] = 'q', [0x11] = 'w',  [0x12] = 'e', [0x13] = 'r', [0x14] = 't',
-      [0x15] = 'y', [0x16] = 'u',  [0x17] = 'i', [0x18] = 'o', [0x19] = 'p',
+  ptr.limit = sizeof(idt) - 1;
+  ptr.base = (u32)&idt;
 
-      [0x1E] = 'a', [0x1F] = 's',  [0x20] = 'd', [0x21] = 'f', [0x22] = 'g',
-      [0x23] = 'h', [0x24] = 'j',  [0x25] = 'k', [0x26] = 'l',
+  __asm__ volatile("lidt %0" : : "m"(ptr));
+}
 
-      [0x2C] = 'z', [0x2D] = 'x',  [0x2E] = 'c', [0x2F] = 'v', [0x30] = 'b',
-      [0x31] = 'n', [0x32] = 'm',
-
-      [0x39] = ' ', [0x1C] = '\n',
-  };
-
-  if (scancode < 128) {
-    return table[scancode];
+static void idt_init(void) {
+  for (u32 i = 0; i < IDT_SIZE; i++) {
+    idt_set_gate(i, 0, 0, 0);
   }
 
-  return 0;
+  // 0x8E = present, ring 0, 32-bit interrupt gate
+  idt_set_gate(INT_KEYBOARD, (u32)keyboard_irq_stub, KERNEL_CODE_SELECTOR,
+               0x8E);
+
+  idt_load();
 }
 
 static void serial_init(void) {
@@ -72,15 +105,20 @@ static void serial_putc(char c) {
   outb(COM1, (u8)c);
 }
 
+static char hex_digit(u8 value) {
+  value &= 0x0F;
+  return value < 10 ? (char)('0' + value) : (char)('A' + value - 10);
+}
+
+static void serial_print_hex8(u8 value) {
+  serial_putc(hex_digit(value >> 4));
+  serial_putc(hex_digit(value));
+}
+
 static void serial_print(const char *s) {
   while (*s) {
     serial_putc(*s++);
   }
-}
-
-static char hex_digit(u8 value) {
-  value &= 0x0F;
-  return value < 10 ? (char)('0' + value) : (char)('A' + value - 10);
 }
 
 static void serial_print_hex32_raw(u32 value) {
@@ -186,6 +224,160 @@ static void vga_print_hex32_at(u32 value, u8 color, u32 x, u32 y) {
   }
 }
 
+static void pic_remap(void) {
+  u8 master_mask = inb(PIC1_DATA);
+  u8 slave_mask = inb(PIC2_DATA);
+
+  outb(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4);
+  io_wait();
+  outb(PIC2_COMMAND, ICW1_INIT | ICW1_ICW4);
+  io_wait();
+
+  // Master PIC IRQ0-7  -> interrupt 0x20-0x27
+  // Slave  PIC IRQ8-15 -> interrupt 0x28-0x2F
+  outb(PIC1_DATA, 0x20);
+  io_wait();
+  outb(PIC2_DATA, 0x28);
+  io_wait();
+
+  // Tell Master PIC that Slave PIC is at IRQ2
+  outb(PIC1_DATA, 0x04);
+  io_wait();
+
+  // Tell Slave PIC its cascade identity
+  outb(PIC2_DATA, 0x02);
+  io_wait();
+
+  outb(PIC1_DATA, ICW4_8086);
+  io_wait();
+  outb(PIC2_DATA, ICW4_8086);
+  io_wait();
+
+  outb(PIC1_DATA, master_mask);
+  outb(PIC2_DATA, slave_mask);
+}
+
+static void pic_set_mask(u8 irq) {
+  u16 port;
+  u8 value;
+
+  if (irq < 8) {
+    port = PIC1_DATA;
+  } else {
+    port = PIC2_DATA;
+    irq -= 8;
+  }
+
+  value = inb(port) | (1 << irq);
+  outb(port, value);
+}
+
+static void pic_clear_mask(u8 irq) {
+  u16 port;
+  u8 value;
+
+  if (irq < 8) {
+    port = PIC1_DATA;
+  } else {
+    port = PIC2_DATA;
+    irq -= 8;
+  }
+
+  value = inb(port) & ~(1 << irq);
+  outb(port, value);
+}
+
+static void pic_send_eoi(u8 irq) {
+  if (irq >= 8) {
+    outb(PIC2_COMMAND, PIC_EOI);
+  }
+
+  outb(PIC1_COMMAND, PIC_EOI);
+}
+
+static char scancode_to_ascii(u8 scancode) {
+  static const char table[128] = {
+      [0x02] = '1', [0x03] = '2',  [0x04] = '3', [0x05] = '4', [0x06] = '5',
+      [0x07] = '6', [0x08] = '7',  [0x09] = '8', [0x0A] = '9', [0x0B] = '0',
+
+      [0x10] = 'q', [0x11] = 'w',  [0x12] = 'e', [0x13] = 'r', [0x14] = 't',
+      [0x15] = 'y', [0x16] = 'u',  [0x17] = 'i', [0x18] = 'o', [0x19] = 'p',
+
+      [0x1E] = 'a', [0x1F] = 's',  [0x20] = 'd', [0x21] = 'f', [0x22] = 'g',
+      [0x23] = 'h', [0x24] = 'j',  [0x25] = 'k', [0x26] = 'l',
+
+      [0x2C] = 'z', [0x2D] = 'x',  [0x2E] = 'c', [0x2F] = 'v', [0x30] = 'b',
+      [0x31] = 'n', [0x32] = 'm',
+
+      [0x39] = ' ', [0x1C] = '\n',
+  };
+
+  if (scancode < 128) {
+    return table[scancode];
+  }
+
+  return 0;
+}
+
+static u32 keyboard_x = 0;
+static u32 keyboard_y = 23;
+
+void keyboard_irq_handler(void) {
+  u8 scancode = inb(PS2_DATA);
+
+  serial_print("keyboard irq scancode=0x");
+  serial_print_hex8(scancode);
+  serial_print("\r\n");
+
+  // key release は無視
+  if ((scancode & 0x80) == 0) {
+    char c = scancode_to_ascii(scancode);
+
+    if (c) {
+      serial_print("key char=");
+      serial_putc(c);
+      serial_print("\r\n");
+
+      if (c == '\n') {
+        keyboard_x = 0;
+        keyboard_y++;
+        if (keyboard_y >= 25) {
+          keyboard_y = 23;
+        }
+      } else {
+        vga_putc_at(c, 0x0A, keyboard_x, keyboard_y);
+        keyboard_x++;
+        if (keyboard_x >= 80) {
+          keyboard_x = 0;
+          keyboard_y++;
+          if (keyboard_y >= 25) {
+            keyboard_y = 23;
+          }
+        }
+      }
+    }
+  }
+
+  pic_send_eoi(IRQ_KEYBOARD);
+}
+
+static void keyboard_interrupt_init(void) {
+  serial_print("Initializing IDT\r\n");
+  idt_init();
+
+  serial_print("Remapping PIC\r\n");
+  pic_remap();
+
+  // いったん全部マスクしてから IRQ1 だけ有効化
+  outb(PIC1_DATA, 0xFF);
+  outb(PIC2_DATA, 0xFF);
+
+  pic_clear_mask(IRQ_KEYBOARD);
+
+  serial_print("Enabling CPU interrupts\r\n");
+  __asm__ volatile("sti");
+}
+
 static void dump_memory_map(const u32 *memmap, u32 entry_count) {
   if (entry_count > 64) {
     serial_print("E820 entry count looks broken; clamp to 64\r\n");
@@ -233,11 +425,6 @@ static void show_memory_map_on_vga(const u32 *memmap, u32 entry_count) {
     vga_print_at(" type=", 0x0F, 41, y);
     vga_print_u32_at(entry[4], 0x0F, 47, y);
   }
-}
-
-static void serial_print_hex8(u8 value) {
-  serial_putc(hex_digit(value >> 4));
-  serial_putc(hex_digit(value));
 }
 
 static void dump_memory_bytes(u32 start_address, u32 byte_count) {
@@ -311,38 +498,10 @@ void kernel_main(const u32 *memmap, u32 entry_count) {
 
   memory_write_demo();
 
-  serial_print("Keyboard ASCII polling started\r\n");
-  vga_print_at("Typed:", 0x0F, 0, 22);
-
-  u32 cursor_x = 7;
+  vga_print_at("Keyboard IRQ enabled. Type keys.", 0x0F, 0, 22);
+  keyboard_interrupt_init();
 
   for (;;) {
-    if (keyboard_has_data()) {
-      u8 scancode = inb(PS2_DATA);
-
-      // 離したキーは無視
-      if (scancode & 0x80) {
-        continue;
-      }
-
-      char c = scancode_to_ascii(scancode);
-
-      serial_print("scancode=0x");
-      serial_print_hex8(scancode);
-
-      if (c) {
-        serial_print(" char=");
-        serial_putc(c);
-
-        if (c == '\n') {
-          // Enterなら打ち消すことにより無視する
-          cursor_x = 7;
-        } else {
-          vga_putc_at(c, 0x0A, cursor_x, 22);
-          cursor_x++;
-        }
-      }
-      serial_print("\n");
-    }
+    __asm__ volatile("hlt");
   }
 }

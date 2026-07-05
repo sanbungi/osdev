@@ -8,6 +8,9 @@ all: $(IMAGE)
 stage2_entry.o: stage2_entry.asm
 	nasm -f elf32 stage2_entry.asm -o stage2_entry.o
 
+keyboard_irq.o: keyboard_irq.asm
+	nasm -f elf32 keyboard_irq.asm -o keyboard_irq.o
+
 kernel.o: kernel.c
 	gcc -m32 \
 	  -ffreestanding \
@@ -28,8 +31,8 @@ debug: $(IMAGE)
 		-no-reboot \
 		-no-shutdown
 
-stage2.elf: stage2_entry.o kernel.o linker.ld
-	ld -m elf_i386 -T linker.ld -nostdlib stage2_entry.o kernel.o -o stage2.elf
+stage2.elf: stage2_entry.o kernel.o keyboard_irq.o linker.ld
+	ld -m elf_i386 -T linker.ld -nostdlib -o stage2.elf stage2_entry.o kernel.o keyboard_irq.o
 
 $(STAGE2): stage2.elf
 	objcopy -O binary stage2.elf $(STAGE2)
