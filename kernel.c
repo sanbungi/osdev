@@ -18,6 +18,17 @@ static inline u8 inb(u16 port) {
   return value;
 }
 
+#define PS2_STATUS 0x64
+#define PS2_DATA 0x60
+
+static int keyboard_has_data(void) { return inb(PS2_STATUS) & 0x01; }
+static u8 keyboard_read_scancode(void) {
+  while (!keyboard_has_data()) {
+  }
+
+  return inb(PS2_DATA);
+}
+
 static void serial_init(void) {
   outb(COM1 + 1, 0x00);
   outb(COM1 + 3, 0x80);
@@ -237,7 +248,7 @@ static void dump_memory_bytes(u32 start_address, u32 byte_count) {
   }
 }
 
-static void memory_write_demo(void){
+static void memory_write_demo(void) {
   volatile u32 *addr = (volatile u32 *)0x70000;
 
   serial_print("write_and_dump_demo\r\n");
@@ -276,7 +287,18 @@ void kernel_main(const u32 *memmap, u32 entry_count) {
 
   memory_write_demo();
 
+  serial_print("Keyboard polling started\r\n");
+  vga_print_at("Press keys. Scancode:", 0x0F, 0, 22);
+
   for (;;) {
-    __asm__ volatile("hlt");
+    if (keyboard_has_data()) {
+      u8 scancode = inb(PS2_DATA);
+
+      serial_print("key scancode: 0x");
+      serial_print_hex8(scancode);
+      serial_print("\r\n");
+
+      vga_print_hex32_at(scancode, 0x0A, 21, 22);
+    }
   }
 }
