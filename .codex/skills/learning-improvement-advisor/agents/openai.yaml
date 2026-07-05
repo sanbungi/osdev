@@ -1,0 +1,4 @@
+interface:
+  display_name: "Learning Improvement Advisor"
+  short_description: "Suggests focused OSDev learning tasks"
+  default_prompt: "Use $learning-improvement-advisor to recommend the next focused learning and improvement tasks for this OSDev repo."
