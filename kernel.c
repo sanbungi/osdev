@@ -29,6 +29,30 @@ static u8 keyboard_read_scancode(void) {
   return inb(PS2_DATA);
 }
 
+static char scancode_to_ascii(u8 scancode) {
+  static const char table[128] = {
+      [0x02] = '1', [0x03] = '2',  [0x04] = '3', [0x05] = '4', [0x06] = '5',
+      [0x07] = '6', [0x08] = '7',  [0x09] = '8', [0x0A] = '9', [0x0B] = '0',
+
+      [0x10] = 'q', [0x11] = 'w',  [0x12] = 'e', [0x13] = 'r', [0x14] = 't',
+      [0x15] = 'y', [0x16] = 'u',  [0x17] = 'i', [0x18] = 'o', [0x19] = 'p',
+
+      [0x1E] = 'a', [0x1F] = 's',  [0x20] = 'd', [0x21] = 'f', [0x22] = 'g',
+      [0x23] = 'h', [0x24] = 'j',  [0x25] = 'k', [0x26] = 'l',
+
+      [0x2C] = 'z', [0x2D] = 'x',  [0x2E] = 'c', [0x2F] = 'v', [0x30] = 'b',
+      [0x31] = 'n', [0x32] = 'm',
+
+      [0x39] = ' ', [0x1C] = '\n',
+  };
+
+  if (scancode < 128) {
+    return table[scancode];
+  }
+
+  return 0;
+}
+
 static void serial_init(void) {
   outb(COM1 + 1, 0x00);
   outb(COM1 + 3, 0x80);
@@ -287,18 +311,38 @@ void kernel_main(const u32 *memmap, u32 entry_count) {
 
   memory_write_demo();
 
-  serial_print("Keyboard polling started\r\n");
-  vga_print_at("Press keys. Scancode:", 0x0F, 0, 22);
+  serial_print("Keyboard ASCII polling started\r\n");
+  vga_print_at("Typed:", 0x0F, 0, 22);
+
+  u32 cursor_x = 7;
 
   for (;;) {
     if (keyboard_has_data()) {
       u8 scancode = inb(PS2_DATA);
 
-      serial_print("key scancode: 0x");
-      serial_print_hex8(scancode);
-      serial_print("\r\n");
+      // 離したキーは無視
+      if (scancode & 0x80) {
+        continue;
+      }
 
-      vga_print_hex32_at(scancode, 0x0A, 21, 22);
+      char c = scancode_to_ascii(scancode);
+
+      serial_print("scancode=0x");
+      serial_print_hex8(scancode);
+
+      if (c) {
+        serial_print(" char=");
+        serial_putc(c);
+
+        if (c == '\n') {
+          // Enterなら打ち消すことにより無視する
+          cursor_x = 7;
+        } else {
+          vga_putc_at(c, 0x0A, cursor_x, 22);
+          cursor_x++;
+        }
+      }
+      serial_print("\n");
     }
   }
 }
