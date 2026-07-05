@@ -1,0 +1,47 @@
+{
+  "artifacts": {
+    "https://cdrdv2.intel.com/v1/dl/getContent/671098": {
+      "kind": "pdf",
+      "path": "335592-092-sdm-vol-4.pdf",
+      "sha256": "31d5a364c155a9a8855feb46eb8c3fa8777d768bf04272c0f90757c9e3a644d4",
+      "size": 3004271
+    },
+    "https://cdrdv2.intel.com/v1/dl/getContent/671110": {
+      "kind": "pdf",
+      "path": "325383-092-sdm-vol-2abcd.pdf",
+      "sha256": "db01e5918a710c16487e27a9e71a19af201f39b3311c55550559baaf0805160b",
+      "size": 11258123
+    },
+    "https://cdrdv2.intel.com/v1/dl/getContent/671436": {
+      "kind": "pdf",
+      "path": "253665-092-sdm-vol-1.pdf",
+      "sha256": "9d862bd7592d9fdd9f747c91d5e85be23ae3103f77185d1dcf7c5eb7277e5bdb",
+      "size": 3645716
+    },
+    "https://cdrdv2.intel.com/v1/dl/getContent/671447": {
+      "kind": "pdf",
+      "path": "325384-092-sdm-vol-3abcd.pdf",
+      "sha256": "5b77208f34f7220b489db1642a681153e19dea5251a32973c01cb9e760bd0cce",
+      "size": 9592181
+    },
+    "https://docs.amd.com/v/u/en-US/24593_3.44_APM_Vol2": {
+      "kind": "pdf",
+      "path": "24593_3.44_APM_Vol2.pdf",
+      "sha256": "3d9dcb3f68222392d0ede9970efc95e31a047a247d54b454123d6981d278c48c",
+      "size": 12560767
+    },
+    "https://files.osdev.org/osdev_wiki.zip": {
+      "file_count": 3377,
+      "kind": "archive_tree",
+      "path": "wiki.osdev.org",
+      "tree_sha256": "3bd8554ca3b975a3640b85f3bef4e2195cf38a17fa1f3d6532c745d8f73450fc"
+    },
+    "https://www.scs.stanford.edu/nyu/04fa/lab/specsbbs101.pdf": {
+      "kind": "pdf",
+      "path": "specsbbs101.pdf",
+      "sha256": "dcf665afbfb18a2d9133b83edb01bf0fd3cd14d86bcbdbe0b550aa67d53eb08a",
+      "size": 183180
+    }
+  },
+  "version": 1
+}
