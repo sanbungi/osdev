@@ -23,3 +23,6 @@ Thumbs.db
 docs/*pdf
 docs/*zip
 docs/wiki*
+
+venv/
+.venv/

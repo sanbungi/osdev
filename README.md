@@ -11,6 +11,7 @@
     binutils \
     nasm \
     python3 \
+    python3-pip \
     qemu-system-x86 \
     qemu-system-gui \
     gdb-multiarch
@@ -24,6 +25,14 @@ cd osdev
 make run
 make run-headless (no gui)
 ```
+
+テスト
+```
+python3 -m venv venv & venv/bin/python3 -m pip install -r requirements-dev.txt
+make test
+```
+
+テストはカーネル内での自己テストと、pytestからqemuを実行して行うものを併用している。
 
 ## 構造
 

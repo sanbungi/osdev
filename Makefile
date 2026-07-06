@@ -1,12 +1,15 @@
 BOOT=boot.bin
 STAGE2=stage2.bin
 IMAGE=os.img
-TEST_BOOT=boot-test.bin
-TEST_STAGE2=stage2-test.bin
-TEST_IMAGE=os-test.img
 STAGE2_SECTORS=32
+TEST_NAME?=divide_by_zero
+QEMU_TEST_TIMEOUT=5
+TEST_BOOT=boot-test-$(TEST_NAME).bin
+TEST_STAGE2=stage2-test-$(TEST_NAME).bin
+TEST_IMAGE=os-test-$(TEST_NAME).img
+TEST_RUNNER=tests/runner.$(TEST_NAME).o
 
-.PHONY: all debug run run-headless run-tcg test clean
+.PHONY: all debug run run-headless run-tcg test qemu-test clean
 
 all: $(IMAGE)
 
@@ -50,7 +53,7 @@ kernel.test.o: kernel.c lib.h
 	  -DKERNEL_TEST \
 	  -c kernel.c -o kernel.test.o
 
-tests/runner.o: tests/runner.c lib.h
+$(TEST_RUNNER): tests/runner.c lib.h
 	gcc -m32 \
 	  -ffreestanding \
 	  -fno-pic \
@@ -59,8 +62,8 @@ tests/runner.o: tests/runner.c lib.h
 	  -nostdinc \
 	  -fno-builtin \
 	  -DKERNEL_TEST \
-	  -DKTEST_DIVIDE_BY_ZERO \
-	  -c tests/runner.c -o tests/runner.o
+	  -DKTEST_NAME=\"$(TEST_NAME)\" \
+	  -c tests/runner.c -o $(TEST_RUNNER)
 
 tests/kernel-test.o: tests/kernel-test.c lib.h
 	gcc -m32 \
@@ -71,7 +74,6 @@ tests/kernel-test.o: tests/kernel-test.c lib.h
 	  -nostdinc \
 	  -fno-builtin \
 	  -DKERNEL_TEST \
-	  -DKTEST_DIVIDE_BY_ZERO \
 	  -c tests/kernel-test.c -o tests/kernel-test.o
 
 debug: $(IMAGE)
@@ -87,15 +89,15 @@ debug: $(IMAGE)
 stage2.elf: stage2_entry.o kernel.o lib.o keyboard_irq.o exception.o linker.ld
 	ld -m elf_i386 -T linker.ld -nostdlib -o stage2.elf stage2_entry.o kernel.o lib.o keyboard_irq.o exception.o
 
-stage2-test.elf: stage2_entry.o kernel.test.o lib.o keyboard_irq.o exception.o tests/runner.o tests/kernel-test.o linker.ld
-	ld -m elf_i386 -T linker.ld -nostdlib -o stage2-test.elf stage2_entry.o kernel.test.o lib.o keyboard_irq.o exception.o tests/runner.o tests/kernel-test.o
+stage2-test-$(TEST_NAME).elf: stage2_entry.o kernel.test.o lib.o keyboard_irq.o exception.o $(TEST_RUNNER) tests/kernel-test.o linker.ld
+	ld -m elf_i386 -T linker.ld -nostdlib -o stage2-test-$(TEST_NAME).elf stage2_entry.o kernel.test.o lib.o keyboard_irq.o exception.o $(TEST_RUNNER) tests/kernel-test.o
 
 $(STAGE2): stage2.elf
 	objcopy -O binary stage2.elf $(STAGE2)
 	python3 -c 'import os,sys; size=os.path.getsize("$(STAGE2)"); limit=$(STAGE2_SECTORS)*512; print("stage2 size:", size, "bytes"); sys.exit(0 if size <= limit else 1)'
 
-$(TEST_STAGE2): stage2-test.elf
-	objcopy -O binary stage2-test.elf $(TEST_STAGE2)
+$(TEST_STAGE2): stage2-test-$(TEST_NAME).elf
+	objcopy -O binary stage2-test-$(TEST_NAME).elf $(TEST_STAGE2)
 	python3 -c 'import os,sys; size=os.path.getsize("$(TEST_STAGE2)"); limit=$(STAGE2_SECTORS)*512; print("test stage2 size:", size, "bytes"); sys.exit(0 if size <= limit else 1)'
 
 $(BOOT): boot.asm $(STAGE2)
@@ -132,9 +134,12 @@ run-headless: $(IMAGE)
 	  -no-reboot \
 	  -no-shutdown
 
-test: $(TEST_IMAGE)
+test:
+	venv/bin/python3 -m pytest -q
+
+qemu-test: $(TEST_IMAGE)
 	@set +e; \
-	qemu-system-x86_64 \
+	timeout $(QEMU_TEST_TIMEOUT)s qemu-system-x86_64 \
 	  -accel tcg \
 	  -drive file=$(TEST_IMAGE),format=raw \
 	  -display none \
@@ -143,6 +148,7 @@ test: $(TEST_IMAGE)
 	  -no-reboot \
 	  -no-shutdown; \
 	status=$$?; \
+	echo "QEMU_EXIT_STATUS=$$status"; \
 	if [ $$status -eq 33 ]; then \
 	  exit 0; \
 	fi; \
@@ -157,4 +163,4 @@ run-tcg: $(IMAGE)
 	  -serial stdio
 
 clean:
-	rm -f *.o *.elf *.bin tests/*.o $(IMAGE) $(TEST_IMAGE)
+	rm -f *.o *.elf *.bin tests/*.o $(IMAGE) os-test-*.img

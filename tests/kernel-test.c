@@ -1,27 +1,75 @@
 #include "../lib.h"
 
+#define EXCEPTION_DE 0
+#define EXCEPTION_DB 1
+
+enum ktest_active {
+  KTEST_NONE = 0,
+  KTEST_DEBUG_EXCEPTION,
+  KTEST_DIVIDE_BY_ZERO,
+};
+
+static enum ktest_active active_test = KTEST_NONE;
+static u32 debug_exception_seen;
+static u32 divide_by_zero_started;
+
 static void ktest_halt(void) {
   for (;;) {
     __asm__ volatile("cli; hlt");
   }
 }
 
-#ifdef KTEST_DIVIDE_BY_ZERO
-static u32 divide_by_zero_started;
+static void ktest_fail_unexpected_exception(u32 vector, u32 eip, u32 cs,
+                                            u32 eflags) {
+  printk("KTEST event=fail name=exception reason=unexpected vector=0x%02X "
+         "eip=0x%08X cs=0x%08X eflags=0x%08X\r\n",
+         vector, eip, cs, eflags);
+  qemu_exit_failure();
+  ktest_halt();
+}
 
-void ktest_handle_divide_error(u32 eip, u32 cs, u32 eflags) {
-  if (!divide_by_zero_started) {
-    printk("KTEST event=fail name=divide_by_zero reason=unexpected_de "
+void ktest_on_exception(u32 vector, u32 eip, u32 cs, u32 eflags) {
+  if (vector == EXCEPTION_DB && active_test == KTEST_DEBUG_EXCEPTION) {
+    debug_exception_seen = 1;
+    return;
+  }
+
+  if (vector == EXCEPTION_DE && active_test == KTEST_DIVIDE_BY_ZERO &&
+      divide_by_zero_started) {
+    printk("KTEST event=pass name=divide_by_zero vector=0x%02X "
            "eip=0x%08X cs=0x%08X eflags=0x%08X\r\n",
-           eip, cs, eflags);
-    qemu_exit_failure();
+           vector, eip, cs, eflags);
+    qemu_exit_success();
     ktest_halt();
   }
 
-  printk("KTEST event=pass name=divide_by_zero eip=0x%08X cs=0x%08X "
-         "eflags=0x%08X\r\n",
-         eip, cs, eflags);
-  qemu_exit_success();
+  ktest_fail_unexpected_exception(vector, eip, cs, eflags);
+}
+
+void test_debug_exception(void) {
+  printk("KTEST event=start name=debug_exception vector=0x%02X\r\n",
+         EXCEPTION_DB);
+
+  active_test = KTEST_DEBUG_EXCEPTION;
+  debug_exception_seen = 0;
+
+  __asm__ volatile("pushfl\n\t"
+                   "orl $0x100, (%%esp)\n\t"
+                   "popfl\n\t"
+                   "nop"
+                   :
+                   :
+                   : "cc", "memory");
+
+  if (debug_exception_seen) {
+    printk("KTEST event=pass name=debug_exception vector=0x%02X\r\n",
+           EXCEPTION_DB);
+    active_test = KTEST_NONE;
+    return;
+  }
+
+  printk("KTEST event=fail name=debug_exception reason=no_exception\r\n");
+  qemu_exit_failure();
   ktest_halt();
 }
 
@@ -29,7 +77,10 @@ void test_divide_by_zero(void) {
   volatile u32 dividend = 1;
   volatile u32 divisor = 0;
 
-  printk("KTEST event=start name=divide_by_zero\r\n");
+  printk("KTEST event=start name=divide_by_zero vector=0x%02X\r\n",
+         EXCEPTION_DE);
+
+  active_test = KTEST_DIVIDE_BY_ZERO;
   divide_by_zero_started = 1;
 
   __asm__ volatile("xorl %%edx, %%edx\n\t"
@@ -42,12 +93,3 @@ void test_divide_by_zero(void) {
   qemu_exit_failure();
   ktest_halt();
 }
-#else
-void ktest_handle_divide_error(u32 eip, u32 cs, u32 eflags) {
-  printk("KTEST event=fail name=unknown reason=unexpected_de eip=0x%08X "
-         "cs=0x%08X eflags=0x%08X\r\n",
-         eip, cs, eflags);
-  qemu_exit_failure();
-  ktest_halt();
-}
-#endif

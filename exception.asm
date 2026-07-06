@@ -12,6 +12,7 @@ bits 32
 
       push esp
       call exception0_handler
+      jmp exception_halt
 
   exception6_stub:
       pusha
@@ -19,10 +20,11 @@ bits 32
 
       push esp
       call exception6_handler
+      jmp exception_halt
 
-  .halt:
+  exception_halt:
       cli
       hlt
-      jmp .halt
+      jmp exception_halt
 
   section .note.GNU-stack noalloc noexec nowrite progbits

@@ -1,8 +1,16 @@
 #include "../lib.h"
 
-#ifdef KTEST_DIVIDE_BY_ZERO
+void test_debug_exception(void);
 void test_divide_by_zero(void);
-#endif
+
+static int streq(const char *a, const char *b) {
+  while (*a && *b && *a == *b) {
+    a++;
+    b++;
+  }
+
+  return *a == *b;
+}
 
 static void ktest_halt(void) {
   for (;;) {
@@ -11,11 +19,17 @@ static void ktest_halt(void) {
 }
 
 void run_kernel_test(void) {
-#ifdef KTEST_DIVIDE_BY_ZERO
-  test_divide_by_zero();
-#else
-  printk("KTEST event=fail name=none reason=no_test_selected\r\n");
+  if (streq(KTEST_NAME, "debug_exception")) {
+    test_debug_exception();
+    return;
+  }
+
+  if (streq(KTEST_NAME, "divide_by_zero")) {
+    test_divide_by_zero();
+    return;
+  }
+
+  printk("KTEST event=fail name=%s reason=unknown_test\r\n", KTEST_NAME);
   qemu_exit_failure();
   ktest_halt();
-#endif
 }

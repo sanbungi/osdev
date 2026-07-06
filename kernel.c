@@ -56,7 +56,7 @@ extern void exception6_stub(void);
 
 #ifdef KERNEL_TEST
 void run_kernel_test(void);
-void ktest_handle_divide_error(u32 eip, u32 cs, u32 eflags);
+void ktest_on_exception(u32 vector, u32 eip, u32 cs, u32 eflags);
 #endif
 
 static void io_wait(void) { outb(0x80, 0); }
@@ -92,7 +92,7 @@ static void idt_init(void) {
   idt_load();
 }
 
-struct exception0_frame {
+struct exception_frame {
   u32 edi;
   u32 esi;
   u32 ebp;
@@ -105,12 +105,12 @@ struct exception0_frame {
   u32 eip;
   u32 cs;
   u32 eflags;
-} __attribute__((packed));
+};
 
-// IDT 0x06エラーが発生した場合のハンドラ
-void exception0_handler(struct exception0_frame *frame) {
+// IDT 0x00 #DE Divide Error が発生した場合のハンドラ
+void exception0_handler(struct exception_frame *frame) {
 #ifdef KERNEL_TEST
-  ktest_handle_divide_error(frame->eip, frame->cs, frame->eflags);
+  ktest_on_exception(0, frame->eip, frame->cs, frame->eflags);
 #endif
 
   printk("\r\n#DE Divide Error\r\n");
@@ -123,23 +123,12 @@ void exception0_handler(struct exception0_frame *frame) {
   }
 }
 
-struct exception6_frame {
-  u32 edi;
-  u32 esi;
-  u32 ebp;
-  u32 esp;
-  u32 ebx;
-  u32 edx;
-  u32 ecx;
-  u32 eax;
+// IDT 0x06 #UD Invalid Opcode が発生した場合のハンドラ
+void exception6_handler(struct exception_frame *frame) {
+#ifdef KERNEL_TEST
+  ktest_on_exception(6, frame->eip, frame->cs, frame->eflags);
+#endif
 
-  u32 eip;
-  u32 cs;
-  u32 eflags;
-} __attribute__((packed));
-
-// IDT 0x06エラーが発生した場合のハンドラ
-void exception6_handler(struct exception6_frame *frame) {
   printk("\r\n#UD Invalid Opcode\r\n");
   printk("eip=0x%08X\r\n", frame->eip);
   printk("cs=0x%08X eflags=0x%08X\r\n", frame->cs,
