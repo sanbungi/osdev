@@ -54,6 +54,11 @@ extern void keyboard_irq_stub(void);
 extern void exception0_stub(void);
 extern void exception6_stub(void);
 
+#ifdef KERNEL_TEST
+void run_kernel_test(void);
+void ktest_handle_divide_error(u32 eip, u32 cs, u32 eflags);
+#endif
+
 static void io_wait(void) { outb(0x80, 0); }
 
 static void idt_set_gate(u8 index, u32 handler, u16 selector, u8 type_attr) {
@@ -104,6 +109,10 @@ struct exception0_frame {
 
 // IDT 0x06エラーが発生した場合のハンドラ
 void exception0_handler(struct exception0_frame *frame) {
+#ifdef KERNEL_TEST
+  ktest_handle_divide_error(frame->eip, frame->cs, frame->eflags);
+#endif
+
   printk("\r\n#DE Divide Error\r\n");
   printk("eip=0x%08X\r\n", frame->eip);
   printk("cs=0x%08X eflags=0x%08X\r\n", frame->cs,
@@ -415,6 +424,11 @@ void kernel_main(const u32 *memmap, u32 entry_count) {
 
   printk("Entered C kernel_main()\r\n");
 
+#ifdef KERNEL_TEST
+  idt_init();
+  run_kernel_test();
+#endif
+
   vga_clear();
   printk_at(0x0A, 0, 0, "Stage1 -> Stage2 -> Protected Mode -> C");
   printk_at(0x0F, 0, 1, "Memory map passed to kernel_main()");
@@ -436,8 +450,8 @@ void kernel_main(const u32 *memmap, u32 entry_count) {
   keyboard_interrupt_init();
 
   //__asm__ volatile("ud2");
-  qemu_exit_success();
-  hoge = hoge / 0;
+
+//  hoge = hoge / 0;
 
   for (;;) {
     __asm__ volatile("hlt");

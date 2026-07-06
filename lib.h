@@ -12,5 +12,7 @@ void printk(const char *fmt, ...);
 void printk_serial(const char *fmt, ...);
 void printk_at(u8 color, u32 x, u32 y, const char *fmt, ...);
 void printk_set_cursor(u32 x, u32 y);
+void qemu_exit_success(void);
+void qemu_exit_failure(void);
 
 #endif
