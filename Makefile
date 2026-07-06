@@ -63,13 +63,19 @@ run: $(IMAGE)
 	qemu-system-x86_64 \
 	  -drive file=$(IMAGE),format=raw \
 	  -display gtk \
-	  -serial stdio
+	  -serial stdio \
+	  -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+	  -no-reboot \
+	  -no-shutdown
 
 run-headless: $(IMAGE)
 	qemu-system-x86_64 \
 	  -drive file=$(IMAGE),format=raw \
 	  -display none \
-	  -serial stdio
+	  -serial stdio \
+	  -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+	  -no-reboot \
+	  -no-shutdown
 
 run-tcg: $(IMAGE)
 	qemu-system-x86_64 \

@@ -324,3 +324,11 @@ void printk_at(u8 color, u32 x, u32 y, const char *fmt, ...) {
   printk_vprint(PRINTK_TARGET_VGA, color, x, y, 0, fmt, ap);
   va_end(ap);
 }
+
+void qemu_exit_success(void) {
+    outb(0xf4, 0x10);
+}
+
+void qemu_exit_failure(void) {
+    outb(0xf4, 0x11);
+}

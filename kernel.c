@@ -436,6 +436,7 @@ void kernel_main(const u32 *memmap, u32 entry_count) {
   keyboard_interrupt_init();
 
   //__asm__ volatile("ud2");
+  qemu_exit_success();
   hoge = hoge / 0;
 
   for (;;) {
