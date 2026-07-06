@@ -11,6 +11,9 @@ stage2_entry.o: stage2_entry.asm
 keyboard_irq.o: keyboard_irq.asm
 	nasm -f elf32 keyboard_irq.asm -o keyboard_irq.o
 
+exception.o: exception.asm
+	nasm -f elf32 exception.asm -o exception.o
+
 kernel.o: kernel.c lib.h
 	gcc -m32 \
 	  -ffreestanding \
@@ -41,8 +44,8 @@ debug: $(IMAGE)
 		-no-reboot \
 		-no-shutdown
 
-stage2.elf: stage2_entry.o kernel.o lib.o keyboard_irq.o linker.ld
-	ld -m elf_i386 -T linker.ld -nostdlib -o stage2.elf stage2_entry.o kernel.o lib.o keyboard_irq.o
+stage2.elf: stage2_entry.o kernel.o lib.o keyboard_irq.o exception.o linker.ld
+	ld -m elf_i386 -T linker.ld -nostdlib -o stage2.elf stage2_entry.o kernel.o lib.o keyboard_irq.o exception.o
 
 $(STAGE2): stage2.elf
 	objcopy -O binary stage2.elf $(STAGE2)
