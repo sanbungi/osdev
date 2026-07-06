@@ -51,6 +51,7 @@ struct idt_ptr {
 static struct idt_entry idt[IDT_SIZE];
 
 extern void keyboard_irq_stub(void);
+extern void exception0_stub(void);
 extern void exception6_stub(void);
 
 static void io_wait(void) { outb(0x80, 0); }
@@ -76,6 +77,7 @@ static void idt_init(void) {
   for (u32 i = 0; i < IDT_SIZE; i++) {
     idt_set_gate(i, 0, 0, 0);
   }
+  idt_set_gate(0, (u32)exception0_stub, KERNEL_CODE_SELECTOR, 0x8E);
   idt_set_gate(6, (u32)exception6_stub, KERNEL_CODE_SELECTOR, 0x8E);
 
   // 0x8E = present, ring 0, 32-bit interrupt gate
@@ -85,33 +87,59 @@ static void idt_init(void) {
   idt_load();
 }
 
-struct exception6_frame {
-    u32 edi;
-    u32 esi;
-    u32 ebp;
-    u32 esp;
-    u32 ebx;
-    u32 edx;
-    u32 ecx;
-    u32 eax;
+struct exception0_frame {
+  u32 edi;
+  u32 esi;
+  u32 ebp;
+  u32 esp;
+  u32 ebx;
+  u32 edx;
+  u32 ecx;
+  u32 eax;
 
-    u32 eip;
-    u32 cs;
-    u32 eflags;
-  } __attribute__((packed));
+  u32 eip;
+  u32 cs;
+  u32 eflags;
+} __attribute__((packed));
 
-  // IDT 0x06エラーが発生した場合のハンドラ
-  void exception6_handler(struct exception6_frame *frame) {
-    printk(PRINTK_SERIAL, 0x00, 0, 0, "\r\n#UD Invalid Opcode\r\n");
-    printk(PRINTK_SERIAL, 0x00, 0, 0, "eip=0x%08X\r\n", frame->eip);
-    printk(PRINTK_SERIAL, 0x00, 0, 0, "cs=0x%08X eflags=0x%08X\r\n",
-           frame->cs, frame->eflags);
+// IDT 0x06エラーが発生した場合のハンドラ
+void exception0_handler(struct exception0_frame *frame) {
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "\r\n#DE Divide Error\r\n");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "eip=0x%08X\r\n", frame->eip);
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "cs=0x%08X eflags=0x%08X\r\n", frame->cs,
+         frame->eflags);
 
-    for (;;) {
-      __asm__ volatile("cli; hlt");
-    }
+  for (;;) {
+    __asm__ volatile("cli; hlt");
   }
+}
 
+struct exception6_frame {
+  u32 edi;
+  u32 esi;
+  u32 ebp;
+  u32 esp;
+  u32 ebx;
+  u32 edx;
+  u32 ecx;
+  u32 eax;
+
+  u32 eip;
+  u32 cs;
+  u32 eflags;
+} __attribute__((packed));
+
+// IDT 0x06エラーが発生した場合のハンドラ
+void exception6_handler(struct exception6_frame *frame) {
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "\r\n#UD Invalid Opcode\r\n");
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "eip=0x%08X\r\n", frame->eip);
+  printk(PRINTK_SERIAL, 0x00, 0, 0, "cs=0x%08X eflags=0x%08X\r\n", frame->cs,
+         frame->eflags);
+
+  for (;;) {
+    __asm__ volatile("cli; hlt");
+  }
+}
 
 static void printk_e820_type(u32 type) {
   if (type == E820_TYPE_USABLE) {
@@ -407,8 +435,8 @@ void kernel_main(const u32 *memmap, u32 entry_count) {
   printk(PRINTK_VGA, 0x0F, 0, 22, "Keyboard IRQ enabled. Type keys.");
   keyboard_interrupt_init();
 
-  __asm__ volatile("ud2");
-  //hoge = hoge / 0;
+  //__asm__ volatile("ud2");
+  hoge = hoge / 0;
 
   for (;;) {
     __asm__ volatile("hlt");
