@@ -3,6 +3,10 @@
 #define COM1 0x3F8
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
+#define PRINTK_TARGET_SERIAL 0x01
+#define PRINTK_TARGET_VGA 0x02
+#define PRINTK_TARGET_BOTH (PRINTK_TARGET_SERIAL | PRINTK_TARGET_VGA)
+#define PRINTK_DEFAULT_COLOR 0x0F
 
 typedef __builtin_va_list va_list;
 
@@ -21,12 +25,15 @@ static inline u8 inb(u16 port) {
 }
 
 static volatile u16 *const VGA = (volatile u16 *)0xB8000;
+static u32 printk_default_x;
+static u32 printk_default_y;
 
 struct printk_sink {
   u8 target;
   u8 color;
   u32 x;
   u32 y;
+  int update_default_cursor;
 };
 
 void serial_init(void) {
@@ -52,11 +59,28 @@ void vga_clear(void) {
   for (u32 i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
     VGA[i] = ((u16)0x0F << 8) | ' ';
   }
+
+  printk_default_x = 0;
+  printk_default_y = 0;
 }
 
 void vga_putc_at(char c, u8 color, u32 x, u32 y) {
   if (x < VGA_WIDTH && y < VGA_HEIGHT) {
     VGA[y * VGA_WIDTH + x] = ((u16)color << 8) | (u8)c;
+  }
+}
+
+void printk_set_cursor(u32 x, u32 y) {
+  if (x < VGA_WIDTH) {
+    printk_default_x = x;
+  } else {
+    printk_default_x = VGA_WIDTH - 1;
+  }
+
+  if (y < VGA_HEIGHT) {
+    printk_default_y = y;
+  } else {
+    printk_default_y = VGA_HEIGHT - 1;
   }
 }
 
@@ -70,11 +94,11 @@ static char hex_digit(u8 value, int uppercase) {
 }
 
 static void printk_emit_char(struct printk_sink *sink, char c) {
-  if (sink->target & PRINTK_SERIAL) {
+  if (sink->target & PRINTK_TARGET_SERIAL) {
     serial_putc(c);
   }
 
-  if ((sink->target & PRINTK_VGA) == 0) {
+  if ((sink->target & PRINTK_TARGET_VGA) == 0) {
     return;
   }
 
@@ -197,29 +221,21 @@ static const char *printk_parse_width(const char *fmt, char *pad, u32 *width) {
   return fmt;
 }
 
-void printk(u8 target, u8 color, u32 x, u32 y, const char *fmt, ...) {
-  struct printk_sink sink;
-  va_list ap;
 
-  sink.target = target;
-  sink.color = color;
-  sink.x = x;
-  sink.y = y;
-
-  va_start(ap, fmt);
-
+static void printk_emit_format(struct printk_sink *sink, const char *fmt,
+                               va_list ap) {
   while (*fmt) {
     char pad;
     u32 width;
 
     if (*fmt != '%') {
-      printk_emit_char(&sink, *fmt++);
+      printk_emit_char(sink, *fmt++);
       continue;
     }
 
     fmt++;
     if (*fmt == '%') {
-      printk_emit_char(&sink, *fmt++);
+      printk_emit_char(sink, *fmt++);
       continue;
     }
 
@@ -227,35 +243,35 @@ void printk(u8 target, u8 color, u32 x, u32 y, const char *fmt, ...) {
 
     switch (*fmt) {
     case 's':
-      printk_emit_string(&sink, va_arg(ap, const char *));
+      printk_emit_string(sink, va_arg(ap, const char *));
       break;
     case 'c':
-      printk_emit_char(&sink, (char)va_arg(ap, int));
+      printk_emit_char(sink, (char)va_arg(ap, int));
       break;
     case 'd':
-      printk_emit_i32(&sink, va_arg(ap, int), width, pad);
+      printk_emit_i32(sink, va_arg(ap, int), width, pad);
       break;
     case 'u':
-      printk_emit_u32(&sink, va_arg(ap, u32), width, pad);
+      printk_emit_u32(sink, va_arg(ap, u32), width, pad);
       break;
     case 'x':
-      printk_emit_hex32(&sink, va_arg(ap, u32), width, pad, 0);
+      printk_emit_hex32(sink, va_arg(ap, u32), width, pad, 0);
       break;
     case 'X':
-      printk_emit_hex32(&sink, va_arg(ap, u32), width, pad, 1);
+      printk_emit_hex32(sink, va_arg(ap, u32), width, pad, 1);
       break;
     case 'p': {
       void *ptr = va_arg(ap, void *);
-      printk_emit_string(&sink, "0x");
-      printk_emit_hex32(&sink, (u32)ptr, 8, '0', 1);
+      printk_emit_string(sink, "0x");
+      printk_emit_hex32(sink, (u32)ptr, 8, '0', 1);
       break;
     }
     case '\0':
       fmt--;
       break;
     default:
-      printk_emit_char(&sink, '%');
-      printk_emit_char(&sink, *fmt);
+      printk_emit_char(sink, '%');
+      printk_emit_char(sink, *fmt);
       break;
     }
 
@@ -263,6 +279,48 @@ void printk(u8 target, u8 color, u32 x, u32 y, const char *fmt, ...) {
       fmt++;
     }
   }
+}
 
+static void printk_vprint(u8 target, u8 color, u32 x, u32 y,
+                          int update_default_cursor, const char *fmt,
+                          va_list ap) {
+  struct printk_sink sink;
+
+  sink.target = target;
+  sink.color = color;
+  sink.x = x;
+  sink.y = y;
+  sink.update_default_cursor = update_default_cursor;
+
+  printk_emit_format(&sink, fmt, ap);
+
+  if (sink.update_default_cursor) {
+    printk_default_x = sink.x;
+    printk_default_y = sink.y;
+  }
+}
+
+void printk(const char *fmt, ...) {
+  va_list ap;
+
+  va_start(ap, fmt);
+  printk_vprint(PRINTK_TARGET_BOTH, PRINTK_DEFAULT_COLOR, printk_default_x,
+                printk_default_y, 1, fmt, ap);
+  va_end(ap);
+}
+
+void printk_serial(const char *fmt, ...) {
+  va_list ap;
+
+  va_start(ap, fmt);
+  printk_vprint(PRINTK_TARGET_SERIAL, 0x00, 0, 0, 0, fmt, ap);
+  va_end(ap);
+}
+
+void printk_at(u8 color, u32 x, u32 y, const char *fmt, ...) {
+  va_list ap;
+
+  va_start(ap, fmt);
+  printk_vprint(PRINTK_TARGET_VGA, color, x, y, 0, fmt, ap);
   va_end(ap);
 }
