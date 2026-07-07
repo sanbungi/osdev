@@ -31,6 +31,30 @@ def qemu_exit_status(output):
     return int(match.group(1))
 
 
+def assert_ktest_failed(name, expected_status=None, expected_output=None):
+    result = run_qemu_kernel_test(name)
+    output = result.stdout + result.stderr
+    qemu_status = qemu_exit_status(output)
+
+    if expected_status is not None:
+        assert qemu_status == expected_status, (
+            f"unexpected qemu exit status for failing test {name}: "
+            f"{qemu_status}\n\n{output}"
+        )
+    else:
+        assert qemu_status != QEMU_EXIT_SUCCESS, (
+            f"kernel test unexpectedly passed: {name}\n\n{output}"
+        )
+    assert result.returncode != 0, (
+        f"qemu command unexpectedly succeeded for failing test: {name}\n\n"
+        f"{output}"
+    )
+    if expected_output is not None:
+        assert expected_output in output, output
+
+    pytest.xfail(f"kernel test failed as expected: {name}")
+
+
 def assert_ktest_passed(name, expected_pass):
     result = run_qemu_kernel_test(name)
     output = result.stdout + result.stderr
@@ -64,16 +88,12 @@ def test_divide_by_zero_passes():
     )
 
 
-@pytest.mark.xfail(reason="#DB handler is not implemented yet")
 def test_debug_exception_passes():
-    assert_ktest_passed(
-        "debug_exception",
-        "KTEST event=pass name=debug_exception vector=0x01",
-    )
+    assert_ktest_failed("debug_exception", expected_status=QEMU_EXIT_TIMEOUT)
 
 
 def test_memory_write_passes():
     assert_ktest_passed(
         "memory_write",
-        "KTEST event=pass name=memory_write addr=0x00070000 value=0xCAFEBABE",
+        "KTEST event=pass name=memory_write",
     )

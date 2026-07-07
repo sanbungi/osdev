@@ -19,6 +19,45 @@ static void ktest_halt(void) {
   }
 }
 
+static void ktest_pass(const char *name) {
+  printk("KTEST event=pass name=%s\r\n", name);
+  qemu_exit_success();
+  ktest_halt();
+}
+
+static void ktest_fail_assert(const char *name, const char *expr, u32 line) {
+  printk("KTEST event=fail name=%s reason=assert expr=%s line=%u\r\n", name,
+         expr, line);
+  qemu_exit_failure();
+  ktest_halt();
+}
+
+static void ktest_fail_assert_u32_eq(const char *name, const char *expr,
+                                     u32 expected, u32 actual, u32 line) {
+  printk("KTEST event=fail name=%s reason=assert_eq expr=%s expected=0x%08X "
+         "actual=0x%08X line=%u\r\n",
+         name, expr, expected, actual, line);
+  qemu_exit_failure();
+  ktest_halt();
+}
+
+#define KTEST_ASSERT(name, expr)                                               \
+  do {                                                                         \
+    if (!(expr)) {                                                             \
+      ktest_fail_assert((name), #expr, __LINE__);                              \
+    }                                                                          \
+  } while (0)
+
+#define KTEST_ASSERT_U32_EQ(name, expected, actual)                            \
+  do {                                                                         \
+    u32 ktest_expected = (u32)(expected);                                      \
+    u32 ktest_actual = (u32)(actual);                                          \
+    if (ktest_actual != ktest_expected) {                                      \
+      ktest_fail_assert_u32_eq((name), #actual, ktest_expected, ktest_actual,  \
+                               __LINE__);                                      \
+    }                                                                          \
+  } while (0)
+
 static void ktest_fail_unexpected_exception(u32 vector, u32 eip, u32 cs,
                                             u32 eflags) {
   printk("KTEST event=fail name=exception reason=unexpected vector=0x%02X "
@@ -103,16 +142,6 @@ void test_memory_write(void) {
 
   *addr = expected;
 
-  if (*addr == expected) {
-    printk("KTEST event=pass name=memory_write addr=0x%08X value=0x%08X\r\n",
-           (u32)addr, *addr);
-    qemu_exit_success();
-    ktest_halt();
-  }
-
-  printk("KTEST event=fail name=memory_write addr=0x%08X expected=0x%08X "
-         "actual=0x%08X\r\n",
-         (u32)addr, expected, *addr);
-  qemu_exit_failure();
-  ktest_halt();
+  KTEST_ASSERT_U32_EQ("memory_write", expected, *addr);
+  ktest_pass("memory_write");
 }
