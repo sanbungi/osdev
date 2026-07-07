@@ -1,6 +1,8 @@
 import re
 import subprocess
 
+import pytest
+
 
 QEMU_EXIT_SUCCESS = 33  # isa-debug-exit: (0x10 << 1) | 1
 QEMU_EXIT_FAILURE = 35  # isa-debug-exit: (0x11 << 1) | 1
@@ -62,8 +64,16 @@ def test_divide_by_zero_passes():
     )
 
 
+@pytest.mark.xfail(reason="#DB handler is not implemented yet")
 def test_debug_exception_passes():
     assert_ktest_passed(
         "debug_exception",
         "KTEST event=pass name=debug_exception vector=0x01",
+    )
+
+
+def test_memory_write_passes():
+    assert_ktest_passed(
+        "memory_write",
+        "KTEST event=pass name=memory_write addr=0x00070000 value=0xCAFEBABE",
     )

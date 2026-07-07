@@ -1,9 +1,4 @@
-// kernel.c
-
 #include "lib.h"
-
-#define E820_WORDS_PER_ENTRY 5
-#define E820_TYPE_USABLE 1
 
 static inline void outb(u16 port, u8 value) {
   __asm__ volatile("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -34,6 +29,7 @@ static inline u8 inb(u16 port) {
 
 #define PS2_DATA 0x60
 #define PS2_STATUS 0x64
+
 
 struct idt_entry {
   u16 offset_low;
@@ -115,8 +111,7 @@ void exception0_handler(struct exception_frame *frame) {
 
   printk("\r\n#DE Divide Error\r\n");
   printk("eip=0x%08X\r\n", frame->eip);
-  printk("cs=0x%08X eflags=0x%08X\r\n", frame->cs,
-         frame->eflags);
+  printk("cs=0x%08X eflags=0x%08X\r\n", frame->cs, frame->eflags);
 
   for (;;) {
     __asm__ volatile("cli; hlt");
@@ -131,27 +126,10 @@ void exception6_handler(struct exception_frame *frame) {
 
   printk("\r\n#UD Invalid Opcode\r\n");
   printk("eip=0x%08X\r\n", frame->eip);
-  printk("cs=0x%08X eflags=0x%08X\r\n", frame->cs,
-         frame->eflags);
+  printk("cs=0x%08X eflags=0x%08X\r\n", frame->cs, frame->eflags);
 
   for (;;) {
     __asm__ volatile("cli; hlt");
-  }
-}
-
-static void printk_e820_type(u32 type) {
-  if (type == E820_TYPE_USABLE) {
-    printk("usable");
-  } else if (type == 2) {
-    printk("reserved");
-  } else if (type == 3) {
-    printk("acpi");
-  } else if (type == 4) {
-    printk("nvs");
-  } else if (type == 5) {
-    printk("bad");
-  } else {
-    printk("type %u", type);
   }
 }
 
@@ -309,105 +287,6 @@ static void keyboard_interrupt_init(void) {
   __asm__ volatile("sti");
 }
 
-static void dump_memory_map(const u32 *memmap, u32 entry_count) {
-  if (entry_count > 64) {
-    printk("E820 entry count looks broken; clamp to 64\r\n");
-    entry_count = 64;
-  }
-
-  printk("E820 memory map entries: ");
-  printk("%u", entry_count);
-  printk("\r\n");
-
-  for (u32 i = 0; i < entry_count; i++) {
-    const u32 *entry = memmap + i * E820_WORDS_PER_ENTRY;
-    u32 base_low = entry[0];
-    u32 base_high = entry[1];
-    u32 length_low = entry[2];
-    u32 length_high = entry[3];
-    u32 type = entry[4];
-
-    printk("  [");
-    printk("%u", i);
-    printk("] base=");
-    printk("0x%08X_%08X", base_high, base_low);
-    printk(" length=");
-    printk("0x%08X_%08X", length_high, length_low);
-    printk(" type=");
-    printk_e820_type(type);
-    printk("\r\n");
-  }
-}
-
-static void show_memory_map_on_vga(const u32 *memmap, u32 entry_count) {
-  printk_at(0x0F, 0, 2, "E820 entries:");
-  printk_at(0x0F, 14, 2, "%u", entry_count);
-
-  u32 shown = entry_count;
-  for (u32 i = 0; i < shown; i++) {
-    const u32 *entry = memmap + i * E820_WORDS_PER_ENTRY;
-    u32 y = 4 + i;
-
-    printk_at(0x0A, 0, y, "%u", i);
-    printk_at(0x0F, 2, y, " base_lo=");
-    printk_at(0x0F, 11, y, "0x%08X", entry[0]);
-    printk_at(0x0F, 22, y, " len_lo=");
-    printk_at(0x0F, 30, y, "0x%08X", entry[2]);
-    printk_at(0x0F, 41, y, " type=");
-    printk_at(0x0F, 47, y, "%u", entry[4]);
-  }
-}
-
-static void dump_memory_bytes(u32 start_address, u32 byte_count) {
-  const volatile u8 *p = (const volatile u8 *)start_address;
-
-  for (u32 offset = 0; offset < byte_count; offset += 16) {
-    printk_serial("0x%08X", start_address + offset);
-    printk_serial(": ");
-
-    for (u32 i = 0; i < 16; i++) {
-      if (offset + i < byte_count) {
-        printk_serial("%02X", p[offset + i]);
-        printk_serial("%c", ' ');
-      } else {
-        printk_serial("   ");
-      }
-    }
-
-    printk_serial(" |");
-
-    for (u32 i = 0; i < 16 && offset + i < byte_count; i++) {
-      u8 c = p[offset + i];
-
-      if (c >= 0x20 && c <= 0x7E) {
-        printk_serial("%c", (char)c);
-      } else {
-        printk_serial("%c", '.');
-      }
-    }
-
-    printk_serial("|\r\n");
-  }
-}
-
-static void memory_write_demo(void) {
-  volatile u32 *addr = (volatile u32 *)0x70000;
-
-  printk_serial("write_and_dump_demo\r\n");
-
-  printk_serial("before dump:\r\n");
-  dump_memory_bytes(0x6FFF0, 0x40);
-
-  *addr = 0xCAFEBABE;
-
-  printk_serial("after dump:\r\n");
-  dump_memory_bytes(0x6FFF0, 0x40);
-
-  printk_serial("read as u32: ");
-  printk_serial("0x%08X", *addr);
-  printk_serial("\r\n");
-}
-u32 hoge = 0;
 void kernel_main(const u32 *memmap, u32 entry_count) {
   serial_init();
 
@@ -433,14 +312,8 @@ void kernel_main(const u32 *memmap, u32 entry_count) {
   dump_memory_map(memmap, entry_count);
   show_memory_map_on_vga(memmap, entry_count);
 
-  memory_write_demo();
-
   printk_at(0x0F, 0, 22, "Keyboard IRQ enabled. Type keys.");
   keyboard_interrupt_init();
-
-  //__asm__ volatile("ud2");
-
-//  hoge = hoge / 0;
 
   for (;;) {
     __asm__ volatile("hlt");

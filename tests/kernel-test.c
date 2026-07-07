@@ -93,3 +93,26 @@ void test_divide_by_zero(void) {
   qemu_exit_failure();
   ktest_halt();
 }
+
+void test_memory_write(void) {
+  volatile u32 *addr = (volatile u32 *)0x70000;
+  const u32 expected = 0xCAFEBABE;
+
+  printk("KTEST event=start name=memory_write addr=0x%08X value=0x%08X\r\n",
+         (u32)addr, expected);
+
+  *addr = expected;
+
+  if (*addr == expected) {
+    printk("KTEST event=pass name=memory_write addr=0x%08X value=0x%08X\r\n",
+           (u32)addr, *addr);
+    qemu_exit_success();
+    ktest_halt();
+  }
+
+  printk("KTEST event=fail name=memory_write addr=0x%08X expected=0x%08X "
+         "actual=0x%08X\r\n",
+         (u32)addr, expected, *addr);
+  qemu_exit_failure();
+  ktest_halt();
+}

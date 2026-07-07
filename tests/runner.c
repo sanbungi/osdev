@@ -2,6 +2,7 @@
 
 void test_debug_exception(void);
 void test_divide_by_zero(void);
+void test_memory_write(void);
 
 static int streq(const char *a, const char *b) {
   while (*a && *b && *a == *b) {
@@ -26,6 +27,11 @@ void run_kernel_test(void) {
 
   if (streq(KTEST_NAME, "divide_by_zero")) {
     test_divide_by_zero();
+    return;
+  }
+
+  if (streq(KTEST_NAME, "memory_write")) {
+    test_memory_write();
     return;
   }
 
