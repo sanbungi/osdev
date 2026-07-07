@@ -53,7 +53,7 @@ kernel.test.o: kernel.c lib.h
 	  -DKERNEL_TEST \
 	  -c kernel.c -o kernel.test.o
 
-$(TEST_RUNNER): tests/runner.c lib.h
+$(TEST_RUNNER): tests/runner.c tests/runner.h lib.h
 	gcc -m32 \
 	  -ffreestanding \
 	  -fno-pic \
@@ -65,7 +65,7 @@ $(TEST_RUNNER): tests/runner.c lib.h
 	  -DKTEST_NAME=\"$(TEST_NAME)\" \
 	  -c tests/runner.c -o $(TEST_RUNNER)
 
-tests/kernel-test.o: tests/kernel-test.c lib.h
+tests/kernel-test.o: tests/kernel-test.c tests/runner.h lib.h
 	gcc -m32 \
 	  -ffreestanding \
 	  -fno-pic \
